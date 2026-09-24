@@ -153,7 +153,7 @@ already copied.
 
 ### 1.6 Verify the staging
 ```bash
-# Catalog object count should match source (~159,316)
+# Catalog object count should match source (168,044 objects as of 2026-09-14: 166,607 items + 1,431 collections + 6 catalogs)
 aws s3 ls s3://hv-fim-dev-stac/hec-ras-stac/ --recursive | wc -l
 
 # Per-prefix asset spot-check (collection-id prefixes; compare src vs dst counts)
