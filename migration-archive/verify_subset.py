@@ -8,8 +8,8 @@ Usage:
     python verify_subset.py 2>&1 | tee verify_subset.log
 
 Env vars (override defaults):
-    STAC_BUCKET_PREFIX  e.g. s3://hv-fim-dev-stac/hec-ras-stac
-    DATA_BUCKET_PREFIX  e.g. s3://hv-fim-dev-data/hec-ras
+    STAC_BUCKET_PREFIX  e.g. s3://hv-fim-dev-stac/HEC-RAS-stac-catalog
+    DATA_BUCKET_PREFIX  e.g. s3://hv-fim-dev-data/HEC-RAS-Source-Models
     WORKING_DIR         local working dir (default: ~/ras-stac-migration-subset)
 
 Dual-cred mode: if DEST_AWS_* env vars are set, they are promoted to AWS_* so

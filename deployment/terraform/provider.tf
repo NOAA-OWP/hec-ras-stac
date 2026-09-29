@@ -1,24 +1,22 @@
 terraform {
+  required_version = ">= 1.16.0"
+
   required_providers {
     aws = {
-      source = "hashicorp/aws"
-      # Consider locking the version here: version = "~> 6.34.0"
+      source  = "hashicorp/aws"
+      version = "~> 6.34.0"
     }
     null = {
-      source = "hashicorp/null"
+      source  = "hashicorp/null"
+      version = "~> 3.2.4"
     }
   }
 }
 
 provider "aws" {
   region = var.aws_region
+}
 
-  default_tags {
-    tags = {
-      Application = var.api_name
-      Environment = var.environment
-      Team        = "FIM-C"
-      ManagedBy   = "terraform"
-    }
-  }
+provider "null" {
+  # The null provider requires no parameters
 }

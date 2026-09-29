@@ -18,7 +18,7 @@ BACKUP_DIR="/opt/backups/postgres"
 
 # AWS Configuration
 AWS_REGION="us-east-1"
-BACKUP_S3_URI="s3://hv-fim-dev-data/hec-ras/backups/stac-db/"
+BACKUP_S3_URI="s3://hv-fim-dev-data/HEC-RAS-Source-Models/backups/stac-db/"
 DOMAIN_NAME="localhost"
 
 # Database Configuration

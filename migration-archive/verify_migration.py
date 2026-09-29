@@ -8,8 +8,8 @@ Usage:
     python verify_migration.py 2>&1 | tee verify_migration.log
 
 Env vars:
-    STAC_BUCKET_PREFIX   e.g. s3://hv-fim-dev-stac/hec-ras-stac  (required)
-    DATA_BUCKET_PREFIX   e.g. s3://hv-fim-dev-data/hec-ras        (required)
+    STAC_BUCKET_PREFIX   e.g. s3://hv-fim-dev-stac/HEC-RAS-stac-catalog  (required)
+    DATA_BUCKET_PREFIX   e.g. s3://hv-fim-dev-data/HEC-RAS-Source-Models (required)
     WORKING_DIR          local working dir (default: ~/ras-stac-migration)
     SAMPLE_N             items per program for HREF check (default: 50)
     SURVIVOR_SAMPLE_N    survivor rows per bucket to spot-check (default: 10)

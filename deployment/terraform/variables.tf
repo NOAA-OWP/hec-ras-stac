@@ -1,11 +1,14 @@
+# Sep 1, 2026: Most of these are left in even though we are not using most right now.
+# We maintain them for when we move out of a dev/test mode and into a prod model.
 variable "environment" {
-  description = "Environment name (test or oe)"
+  description = "fim-dev HEC-RAS STAC"
   type        = string
 
-  validation {
-    condition     = contains(["test", "oe"], var.environment)
-    error_message = "Environment must be either 'test' or 'oe'."
-  }
+  # TODO: Sep 1, 2026: Add validation?
+  # validation {
+  #   condition     = contains(["test", "oe"], var.environment)
+  #   error_message = "Environment must be either 'test' or 'oe'."
+  # }
 }
 
 variable "aws_region" {
@@ -16,6 +19,12 @@ variable "aws_region" {
 variable "api_name" {
   description = "Name of the API application"
   type        = string
+  nullable    = false
+  
+  validation {
+    condition     = var.api_name != ""
+    error_message = "The api_name variable must not be an empty string."
+  }
 }
 
 variable "vpc_name" {
@@ -24,17 +33,31 @@ variable "vpc_name" {
   default     = "main"
 }
 
+# Sep 2026: This is for enterprise (well.. muliple subnets)
 variable "subnet_name_pattern" {
   description = "Pattern to match for target subnets in the VPC"
   type        = string
-  default     = "App*"
+  default     = "App*"  
+}
+
+# Sep 2026: This is for stand alone with a single subnet id
+variable "subnet_id" {
+  description = "A valid subnet_id in the VPC"
+  type        = string
 }
 
 variable "hosted_zone_id" {
   description = "Route53 hosted zone ID for DNS records"
   type        = string
+  nullable    = false
+  
+  validation {
+    condition     = var.hosted_zone_id != ""
+    error_message = "The hosted_zone_id variable must not be an empty string."
+  }
 }
 
+# Must exist and be one of the approved golden AMI images.
 variable "ami_id" {
   description = "AMI ID for EC2 instances. If not provided, latest specified ubuntu AMI will be used."
   type        = string
@@ -46,21 +69,40 @@ variable "ami_id" {
   }
 }
 
-variable "ubuntu_version" {
-  description = "Ubuntu release version to use if ami_id is not provided."
+# TODO: Sept 2026: How do we want to handle this in enterprise mode?
+# variable "ec2_iam_instance_profile_name" {
+#   description = "Provide the EC2s IAM role that will allow the EC2 access in dev enviros"
+#   type        = string
+# }
+
+variable "ec2_iam_instance_profile_name" {
+  description = "When EC2s are created, set the IAM role to the instance itself, not dynamicallly created"
   type        = string
-  default     = "noble-24.04" # Options: "jammy-22.04" or "noble-24.04"
 }
 
-variable "architecture" {
-  description = "CPU architecture for the AMI (amd64 or arm64)"
-  type        = string
-  default     = "amd64"
-}
+# Must use OWPs golden images, so building an image from scratch is not an option
+# variable "ubuntu_version" {
+#   description = "Ubuntu release version to use if ami_id is not provided."
+#   type        = string
+#   default     = "noble-24.04" # Options: "jammy-22.04" or "noble-24.04"
+# }
+
+# Must use OWPs golden images, so building an image from scratch is not an option
+# variable "architecture" {
+#   description = "CPU architecture for the AMI (amd64 or arm64)"
+#   type        = string
+#   default     = "amd64"
+# }
 
 variable "instance_type" {
   description = "EC2 instance type"
   type        = string
+  nullable    = false
+  
+  validation {
+    condition     = var.instance_type != ""
+    error_message = "The instance_type variable must not be an empty string."
+  }  
 }
 
 variable "root_volume_type" {
@@ -79,6 +121,24 @@ variable "key_name" {
   description = "The name of the AWS Key Pair to use for instance authentication"
   type        = string
   default     = null
+}
+
+variable "security_group_ids" {
+  description = "Security group IDs for Batch compute instances"
+  type        = list(string)
+}
+
+variable "ec2_instance_name_override" {
+  description = "If you want to override the default calcd instance name, use this var"
+  type        = string
+  default     = null
+}
+
+# Used in conjuntions with the common tags
+variable "ec2_resource_tags" {
+  description = "A map of tags that are applicable to EC2s only."
+  type        = map(string)
+  default     = {}
 }
 
 variable "asg_min_size" {
@@ -128,13 +188,13 @@ variable "health_check_timeout" {
   default     = 5
 }
 
-variable "health_check_healthy_threshold" {
+variable "health_check_success_threshold" {
   description = "Number of consecutive successful health checks before considering target healthy"
   type        = number
   default     = 2
 }
 
-variable "health_check_unhealthy_threshold" {
+variable "health_check_failed_threshold" {
   description = "Number of consecutive failed health checks before considering target unhealthy"
   type        = number
   default     = 2
@@ -202,16 +262,22 @@ variable "alb_target_port" {
   default     = 8082
 }
 
-variable "api_image_version" {
-  description = "Docker image tag for the STAC FastAPI container"
+variable "pgstac_version" {
+  description = "Docker image tag for the STAC API container and product version"
   type        = string
-  default     = "4.0.3"
+  default     = "v0.9.11"
 }
 
-variable "browser_image_version" {
+variable "stac_fastapi_image_version" {
+  description = "Docker image tag for the STAC FastAPI container"
+  type        = string
+  default     = "6.4.0"
+}
+
+variable "stac_browser_image_version" {
   description = "Docker image tag for the STAC Browser container"
   type        = string
-  default     = "3.3.4"
+  default     = "5.1.0"
 }
 
 # ==========================================
@@ -237,9 +303,9 @@ variable "backup_s3_uri" {
 }
 
 variable "stac_catalog_path" {
-  description = "S3 key prefix where the STAC catalog lives within the STAC bucket (e.g., hec-ras-stac/)"
+  description = "S3 key prefix where the STAC catalog lives within the STAC bucket (e.g., benchmark-stac/)"
   type        = string
-  default     = "hec-ras-stac/"
+  default     = "benchmark-stac/"
 }
 
 # ==========================================
@@ -249,7 +315,7 @@ variable "stac_catalog_path" {
 variable "enterprise_mode" {
   description = "If true, deploy with Active Directory join, external RDS, and autoscaling. If false, deploy the standalone local docker configuration."
   type        = bool
-  default     = true
+  default     = false
 }
 
 # ==========================================
@@ -280,6 +346,12 @@ variable "db_port" {
   default     = 5432
 }
 
+variable "postgres_password" {
+  description = "Optionally set the postgres user password. Leave blank to it is auto generate."
+  type        = string
+  default     = ""
+}
+
 variable "directory_id" {
   description = "ID of the AWS Managed Microsoft AD directory for Windows instances. Optional if enterprise_mode is false."
   type        = string
@@ -302,4 +374,14 @@ variable "ad_dns_servers" {
   description = "List of IP addresses for the AD DNS servers. Only used if enterprise_mode is true."
   type        = list(string)
   default     = [] # Default to empty for standalone mode
+}
+
+# ==========================================
+# Tags - applicable to all AWS resources
+# ==========================================
+# TODO: Add these tags to all resources
+variable "common_resource_tags" {
+  description = "A map of tags to assign to all aws resources"
+  type        = map(string)
+  default     = {}
 }
