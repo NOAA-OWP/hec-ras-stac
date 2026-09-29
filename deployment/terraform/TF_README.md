@@ -13,6 +13,8 @@ This directory contains the Infrastructure as Code (IaC) required to deploy the 
 
 To deploy the infrastructure, you must create a `.tfvars` file to define your environment-specific settings. It is also suggested that a `backend.tf` be created to properly maintain an encrypted state in an S3 bucket or shared location.  This is generally very specific to the preferences and policies of the deploying team or administrator. 
 
+Keep the `.tfvars` out of the repo folders and adjust all tf commands to point to the fully pathed  `.tfvars` file.
+
 Below are the primary variables required for a successful deployment.
 
 ## Example Configurations (non-functional examples requiring value replacements)
@@ -21,7 +23,7 @@ The following example demonstrates a typical configuration for a standalone depl
 
 ```hcl
 # Core Environment Settings
-environment        = "test"
+environment        = "fim-dev"
 aws_region         = "us-east-1"
 api_name           = "hec-ras-stac"
 hosted_zone_id     = "Z00000000000000000000"
@@ -33,9 +35,9 @@ vpc_name             = "Your-VPC-Name"
 subnet_name_pattern  = "Your-Private-Subnet-Pattern*"
 instance_type        = "t3.xlarge"
 root_volume_size     = 100
-ubuntu_version       = "jammy-22.04"
-architecture         = "amd64"
-additional_vpc_cidrs = ["10.0.0.0/16"]
+# ubuntu_version       = "jammy-22.04"
+#architecture         = "amd64"
+#additional_vpc_cidrs = ["10.0.0.0/16"]
 
 # Deployment Strategy (Standalone Mode)
 enterprise_mode = false
@@ -101,10 +103,10 @@ terraform {
 2. Create a custom variable file (Example: my-deploy.tfvars) and populate it with your environment details based on the variables described above.
 3. Generate and review the execution plan:
     ```bash
-    terraform plan -var-file="my-deploy.tfvars"
+    terraform plan -var-file="C:\HEC-RAS-STAC\hec-ras-stac.tfvars" -out "C:\HEC-RAS-STAC\hec-ras-stac.tfplan"
 4. Apply the configuration:
     ```bash
-    terraform apply -var-file="my-deploy.tfvars"
+    terraform apply -var-file="C:\HEC-RAS-STAC\hec-ras-stac.tfvars"
 ## Infrastructure Details
 ### Standalone Mode
 

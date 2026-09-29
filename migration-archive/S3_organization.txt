@@ -181,10 +181,10 @@ Dewberry alias s3://fim/ (not the actual fimc-data/dewberry-stac bucket).
 
   Source                                                       Destination
   ──────                                                       ───────────
-  s3://fim/<prefix>/source_models/<hash>/<file>          →     s3://hv-fim-dev-data/hec-ras/<collection-id>/<item-id>/<file>
-  s3://fim/<prefix>/stac_items/<hash>/<file>             →     s3://hv-fim-dev-data/hec-ras/<collection-id>/<item-id>/<file>
+  s3://fim/<prefix>/source_models/<hash>/<file>          →     s3://hv-fim-dev-data/HEC-RAS-Source-Models/<collection-id>/<item-id>/<file>
+  s3://fim/<prefix>/stac_items/<hash>/<file>             →     s3://hv-fim-dev-data/HEC-RAS-Source-Models/<collection-id>/<item-id>/<file>
   https://fim.s3.amazonaws.com//<prefix>/stac_items/<hash>/<file>
-                                                         →     s3://hv-fim-dev-data/hec-ras/<collection-id>/<item-id>/<file>
+                                                         →     s3://hv-fim-dev-data/HEC-RAS-Source-Models/<collection-id>/<item-id>/<file>
 
 Both source_models/<hash>/ and stac_items/<hash>/ flatten into the SAME data
 bucket destination. Collision-checked across the full source: 0 filename

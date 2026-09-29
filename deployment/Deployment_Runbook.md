@@ -15,7 +15,7 @@ single EC2 instance.
 | EC2 Instance | t3.xlarge (4 vCPU, 16 GB RAM) |
 | Services | PostgreSQL (5432), STAC API (8082), STAC Browser (8080), asset-proxy (8083) |
 | Source (NGWPC) | `s3://fimc-data/hv-fim-dev-stac/hec-ras-stac/` + `s3://fimc-data/hv-fim-dev-data/hec-ras/` |
-| Serving buckets (OWP) | `s3://hv-fim-dev-stac/hec-ras-stac/` + `s3://hv-fim-dev-data/hec-ras/` |
+| Serving buckets (OWP) | `s3://hv-fim-dev-stac/HEC-RAS-stac-catalog/` + `s3://hv-fim-dev-data/HEC-RAS-Source-Models/` |
 | Bootstrap | Automated via `deployment/terraform/templates/user_data_standalone.sh.tpl` |
 
 The catalog and assets are copied once from the NGWPC `fimc-data` source into
@@ -87,7 +87,7 @@ The `rewrite_catalog_hrefs.py` script is needed in step 1.2 — clone the repo
 locally before proceeding.
 
 ```bash
-git clone https://github.com/NGWPC/hec-ras-stac.git ~/hec-ras-stac
+git clone https://github.com/NOAA-OWP/hec-ras-stac.git ~/hec-ras-stac
 ```
 
 ### 1.2 Sync the STAC catalog to local disk
@@ -119,17 +119,17 @@ HREFs would be rewritten: 1641945
 ```
 
 Expected after apply: all item `href` values updated from
-`s3://fimc-data/hv-fim-dev-data/hec-ras/...` → `s3://hv-fim-dev-data/hec-ras/...`
+`s3://fimc-data/hv-fim-dev-data/hec-ras/...` → `s3://hv-fim-dev-data/HEC-RAS-Source-Models/...`
 
 ### 1.4 Push corrected catalog to OWP bucket
 ```bash
-aws s3 sync ~/hec-ras-catalog/ s3://hv-fim-dev-stac/hec-ras-stac/
+aws s3 sync ~/hec-ras-catalog/ s3://hv-fim-dev-stac/HEC-RAS-stac-catalog/
 ```
 
 ### 1.5 Sync the assets (large)
 
 ```bash
-aws s3 sync s3://fimc-data/hv-fim-dev-data/hec-ras/ s3://hv-fim-dev-data/hec-ras/ \
+aws s3 sync s3://fimc-data/hv-fim-dev-data/hec-ras/ s3://hv-fim-dev-data/HEC-RAS-Source-Models/ \
   --exclude "backups/*"
 ```
 
@@ -145,7 +145,7 @@ already copied.
 > and `sync` can't scope to an arbitrary string prefix, so filter with
 > `--exclude "*" --include "<prefix>/*"` (the `/*` matches nested item files):
 > ```bash
-> aws s3 sync s3://fimc-data/hv-fim-dev-data/hec-ras/ s3://hv-fim-dev-data/hec-ras/ \
+> aws s3 sync s3://fimc-data/hv-fim-dev-data/hec-ras/ s3://hv-fim-dev-data/HEC-RAS-Source-Models/ \
 >   --exclude "backups/*" \
 >   --exclude "*" --include "mip_*/*"      # or ble_*/*, ohio_rfc/*, mip_11*/* ...
 > ```
@@ -153,13 +153,13 @@ already copied.
 
 ### 1.6 Verify the staging
 ```bash
-# Catalog object count should match source (~159,316)
-aws s3 ls s3://hv-fim-dev-stac/hec-ras-stac/ --recursive | wc -l
+# Catalog object count should match source (168,044 objects as of 2026-09-14: 166,607 items + 1,431 collections + 6 catalogs)
+aws s3 ls s3://hv-fim-dev-stac/HEC-RAS-stac-catalog/ --recursive | wc -l
 
 # Per-prefix asset spot-check (collection-id prefixes; compare src vs dst counts)
 for p in ble_ mip_ ohio_rfc; do
   echo -n "$p src: "; aws s3 ls s3://fimc-data/hv-fim-dev-data/hec-ras/$p --recursive | wc -l
-  echo -n "$p dst: "; aws s3 ls s3://hv-fim-dev-data/hec-ras/$p --recursive | wc -l
+  echo -n "$p dst: "; aws s3 ls s3://hv-fim-dev-data/HEC-RAS-Source-Models/$p --recursive | wc -l
 done
 
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
@@ -194,8 +194,8 @@ s3_read_paths        = ["hv-fim-dev-stac", "hv-fim-dev-data"]
 # Write access for DB backups. Source reads from fimc-data use separate
 # temporary keys (Phase 0.2), not the instance role. The Phase 1 catalog +
 # asset copy runs from the admin machine using OWP credentials directly.
-s3_write_paths       = ["hv-fim-dev-stac/hec-ras-stac/*", "hv-fim-dev-data/hec-ras/*"]
-backup_s3_uri        = "s3://hv-fim-dev-data/hec-ras/backups/stac-db/"
+s3_write_paths       = ["hv-fim-dev-stac/HEC-RAS-stac-catalog/*", "hv-fim-dev-data/HEC-RAS-Source-Models/*"]
+backup_s3_uri        = "s3://hv-fim-dev-data/HEC-RAS-Source-Models/backups/stac-db/"
 
 stac_catalog_path    = "hec-ras-stac/"
 log_retention_days   = 7
@@ -208,8 +208,8 @@ Create `backend.tf` for remote state (S3 backend recommended).
 ```bash
 cd deployment/terraform
 terraform init
-terraform plan -var-file="terraform.tfvars"
-terraform apply -var-file="terraform.tfvars"
+terraform plan -var-file="C:\HEC-RAS-STAC\hec-ras-stac.tfvars" -out "C:\HEC-RAS-STAC\hec-ras-stac.tfplan"
+terraform apply -var-file="C:\HEC-RAS-STAC\hec-ras-stac.tfplan"
 ```
 
 Creates: Security group (8080/8082/8083 + SSH to VPC), IAM role with dynamic S3 policies, EC2 instance with bootstrap, Route53 A record, CloudWatch log group.
@@ -231,14 +231,14 @@ docker ps  # Expect: hec-ras-stac-db, hec-ras-stac-api, hec-ras-stac-browser, he
 
 **Note:** The bootstrap generates utility scripts (`health-check.sh`, `backup-db.sh`, `restart-services.sh`) on the EC2 instance at `/opt/hec-ras-stac/deployment/`. These are not present in the repository.
 
-**Rollback:** `terraform destroy -var-file="terraform.tfvars"`
+**Rollback:** `terraform destroy -var-file="C:\HEC-RAS-STAC\hec-ras-stac.tfplan"`
 
 **State after Phase 2:** 4 containers running, empty database, API on 8082, Browser on 8080, proxy on 8083.
 
 ### 2.4 Clone Repository (**EC2 instance**)
 
 ```bash
-sudo git clone https://github.com/NGWPC/hec-ras-stac.git /opt/hec-ras-stac/repo
+sudo git clone https://github.com/NOAA-OWP/hec-ras-stac.git /opt/hec-ras-stac/repo
 ```
 
 Verify:
@@ -270,7 +270,7 @@ sudo /opt/hec-ras-stac/deployment/restart-services.sh
 If deployment fails:
 
 1. Preserve logs from `/var/log/hec-ras-stac/`
-2. Destroy resources: `terraform destroy -var-file="terraform.tfvars"`
+2. Destroy resources: `terraform destroy -var-file="C:\HEC-RAS-STAC\hec-ras-stac.tfplan""`
 
 ---
 

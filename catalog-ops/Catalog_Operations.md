@@ -15,11 +15,11 @@ commands run on the EC2 instance.
 
 | | |
 |---|---|
-| STAC bucket | `s3://hv-fim-dev-stac/hec-ras-stac/` |
-| Data bucket | `s3://hv-fim-dev-data/hec-ras/` |
+| STAC bucket | `s3://hv-fim-dev-stac/HEC-RAS-stac-catalog/` |
+| Data bucket | `s3://hv-fim-dev-data/HEC-RAS-Source-Models/` |
 | Catalog scale | 166,607 items, 1,431 collections (`ble_*`, `mip_*`, `ohio_rfc`, `mn_*`, `nc_*`) |
 
-Scripts live at `/opt/hec-ras-stac/repo/catalog-ops/`, cloned from `https://github.com/NGWPC/hec-ras-stac` (`catalog-ops` branch) in Deployment Runbook Phase 2.4.
+Scripts live at `/opt/hec-ras-stac/repo/catalog-ops/`, cloned from `https://github.com/NOAA-OWP/hec-ras-stac` (`catalog-ops` branch) in Deployment Runbook Phase 2.4.
 
 ---
 
@@ -31,7 +31,7 @@ with HREFs and thumbnail structure already corrected. Sync them locally for load
 ### 1.1 Sync Catalog Locally
 ```bash
 mkdir -p ~/hec-ras-catalog
-aws s3 sync s3://hv-fim-dev-stac/hec-ras-stac/ ~/hec-ras-catalog/
+aws s3 sync s3://hv-fim-dev-stac/HEC-RAS-stac-catalog/ ~/hec-ras-catalog/
 ```
 
 Expected: ~168,039 objects (catalog.json, 6 program catalogs, 1,431
@@ -97,7 +97,7 @@ docker exec -i hec-ras-stac-db psql -U pgstac -d stacdb -c \
 
 # Spot-check per-collection DB count vs S3 for representative collections
 for col in ohio_rfc ble_05119_Pulaski mip_03160109; do
-  s3_count=$(aws s3 ls s3://hv-fim-dev-stac/hec-ras-stac/ --recursive | grep "/${col}/" | grep '\.json$' | grep -v 'collection.json' | grep -v 'catalog.json' | wc -l)
+  s3_count=$(aws s3 ls s3://hv-fim-dev-stac/HEC-RAS-stac-catalog/ --recursive | grep "/${col}/" | grep '\.json$' | grep -v 'collection.json' | grep -v 'catalog.json' | wc -l)
   db_count=$(docker exec -i hec-ras-stac-db psql -U pgstac -d stacdb -t -A -c "SELECT COUNT(*) FROM pgstac.items WHERE collection='${col}';")
   echo "${col}: S3=${s3_count} DB=${db_count} $([ "$s3_count" -eq "$db_count" ] && echo 'OK' || echo 'MISMATCH')"
 done
@@ -329,7 +329,7 @@ crontab -l | grep backup-db.sh
 
 S3 backup upload (if configured):
 ```bash
-aws s3 ls s3://hv-fim-dev-data/hec-ras/backups/stac-db/
+aws s3 ls s3://hv-fim-dev-data/HEC-RAS-Source-Models/backups/stac-db/
 # Expect: backup files with recent timestamps
 ```
 
@@ -364,7 +364,7 @@ free -h
 - [ ] Elastic IP or DNS configured (optional)
 
 **Catalog & Assets**
-- [ ] S3 catalog synced (`hv-fim-dev-stac/hec-ras-stac/`) — 166,607 items, 1,431 collections
+- [ ] S3 catalog synced (`hv-fim-dev-stac/HEC-RAS-stac-catalog/`) — 166,607 items, 1,431 collections
 - [ ] Asset HREFs rewritten to proxy URLs (no `s3://` HREFs remain in pgSTAC)
 
 **Application**
@@ -420,7 +420,7 @@ import boto3
 s3 = boto3.client('s3', region_name='us-east-1')
 try:
     # Replace with any known key in hv-fim-dev-data
-    r = s3.head_object(Bucket='fimc-data', Key='hv-fim-dev-data/hec-ras/ohio_rfc/Ohio2018a/Thumbnail.png')
+    r = s3.head_object(Bucket='fimc-data', Key='hv-fim-dev-data/HEC-RAS-Source-Models/ohio_rfc/Ohio2018a/Thumbnail.png')
     print('OK:', r['ContentLength'], 'bytes')
 except Exception as e:
     print('FAILED:', e)

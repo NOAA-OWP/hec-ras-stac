@@ -45,30 +45,30 @@ data "aws_route53_zone" "selected" {
 
 # ==========================================
 # Ubuntu AMIs
-# ==========================================
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"] # Canonical
+# Sep 2026: We do not need this section for OWP as we need approved pre-existing EC2 images
+# data "aws_ami" "ubuntu" {
+#   most_recent = true
+#   owners      = ["099720109477"] # Canonical
 
-  filter {
-    name = "name"
-    # Dynamically matches: ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-* # Or: ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-*
-    values = ["ubuntu/images/hvm-ssd*/ubuntu-${var.ubuntu_version}-${var.architecture}-server-*"]
-  }
+#   filter {
+#     name = "name"
+#     # Dynamically matches: ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-* # Or: ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-*
+#     values = ["ubuntu/images/hvm-ssd*/ubuntu-${var.ubuntu_version}-${var.architecture}-server-*"]
+#   }
 
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
+#   filter {
+#     name   = "virtualization-type"
+#     values = ["hvm"]
+#   }
 
-  filter {
-    name = "architecture"
-    # AWS uses "x86_64" in the architecture filter, but Canonical uses "amd64" in the AMI name
-    values = [var.architecture == "amd64" ? "x86_64" : var.architecture]
-  }
+#   filter {
+#     name = "architecture"
+#     # AWS uses "x86_64" in the architecture filter, but Canonical uses "amd64" in the AMI name
+#     values = [var.architecture == "amd64" ? "x86_64" : var.architecture]
+#   }
 
-  filter {
-    name   = "state"
-    values = ["available"]
-  }
-}
+#   filter {
+#     name   = "state"
+#     values = ["available"]
+#   }
+# }

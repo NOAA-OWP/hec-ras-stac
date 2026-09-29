@@ -17,7 +17,7 @@ Default substitution:
   s3_key:           hv-fim-dev-data/hec-ras/...      →                    hec-ras/...
 
 After running this script, re-sync the corrected JSONs to S3:
-  aws s3 sync <catalog_dir>/ s3://hv-fim-dev-stac/hec-ras-stac/
+  aws s3 sync <catalog_dir>/ s3://hv-fim-dev-stac/HEC-RAS-stac-catalog/
 
 Usage:
     # Dry run — report counts, no files written
@@ -121,7 +121,7 @@ def main() -> int:
         print("\n[DRY RUN] No files written")
     else:
         print(f"\nNext: sync corrected catalog to S3:")
-        print(f"  aws s3 sync {catalog_dir}/ s3://hv-fim-dev-stac/hec-ras-stac/")
+        print(f"  aws s3 sync {catalog_dir}/ s3://hv-fim-dev-stac/HEC-RAS-stac-catalog/")
 
     return 0
 

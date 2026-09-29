@@ -17,3 +17,6 @@ dump-reconciliation/outputs
 
 # pgstac Dump
 *.dump
+
+# Git
+.git_local_repo_credentials

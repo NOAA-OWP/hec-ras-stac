@@ -43,7 +43,7 @@ hec-ras-stac/
 | Source (NGWPC) | `s3://fimc-data` | `hv-fim-dev-stac/hec-ras-stac/` (catalog JSONs) |
 | Source (NGWPC) | `s3://fimc-data` | `hv-fim-dev-data/hec-ras/<collection-id>/` (assets) |
 | Serving (OWP) | `s3://hv-fim-dev-stac` | `hec-ras-stac/` (catalog JSONs) |
-| Serving (OWP) | `s3://hv-fim-dev-data` | `hec-ras/<collection-id>/` (assets) |
+| Serving (OWP) | `s3://hv-fim-dev-data` | `HEC-RAS-Source-Models/<collection-id>/` (assets) |
 
 Catalog and assets are copied once from `fimc-data` into the OWP buckets before Terraform runs. The EC2 instance role only touches the OWP buckets.
 

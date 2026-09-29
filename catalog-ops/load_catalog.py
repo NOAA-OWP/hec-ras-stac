@@ -41,7 +41,7 @@ Usage:
     PGPASSWORD=devpassword python load_catalog.py ~/ras-stac-migration-v2 --db-host localhost
 
     # Load into EC2-hosted pgSTAC after pulling JSONs from S3 directly
-    aws s3 sync s3://hv-fim-dev-stac/hec-ras-stac/ ~/load_subset/
+    aws s3 sync s3://hv-fim-dev-stac/HEC-RAS-stac-catalog/ ~/load_subset/
     python3 load_catalog.py ~/load_subset --db-host localhost  # picks up /opt/hec-ras-stac/.db_password
 """
 

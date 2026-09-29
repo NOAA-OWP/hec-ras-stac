@@ -24,12 +24,14 @@ DOMAIN_NAME="${domain_name}"
 # Database Configuration
 POSTGRES_USER="pgstac"
 POSTGRES_DB="stacdb"
-POSTGRES_PASSWORD=""  # Will be auto-generated if left empty
+POSTGRES_PASSWORD="${postgres_password}"  # Will be auto-generated if left empty
 
 # Docker Image Versions
-PGSTAC_VERSION="v0.8.6"
-STAC_API_VERSION="${api_image_version}"
-STAC_BROWSER_VERSION="${browser_image_version}"
+# NOTE: Sep 2026: Note: There are some versions numbers hardcoded in a few places when 'cat' a string
+# to make a file. Had trouble getting it to pick up the variables dynamically. Need to fix this.
+PGSTAC_VERSION="${pgstac_version}"
+STAC_FASTAPI_VERSION="${stac_fastapi_image_version}"
+STAC_BROWSER_VERSION="${stac_browser_image_version}"
 
 ################################################################################
 # DO NOT EDIT BELOW THIS LINE UNLESS YOU KNOW WHAT YOU'RE DOING
@@ -46,8 +48,9 @@ fi
 
 echo "================================="
 echo "HEC-RAS STAC Bootstrap"
-echo "Ubuntu Version: $OS_VERSION"
+# echo "Ubuntu Version: $OS_VERSION"
 echo "Timestamp: $(date)"
+echo "Bootstrap logs including errors can be found at /var/log/cloud-init-output.log in the EC2 (need SSH login)"
 echo "================================="
 
 ################################################################################
@@ -61,6 +64,7 @@ echo "[$(date)] Bootstrap started"
 ################################################################################
 # System Updates and Package Installation
 ################################################################################
+echo "================================="
 echo "[$(date)] Updating system packages..."
 
 # Ubuntu has a known issues with apt locks when cloud-init is running updates in the background. 
@@ -100,6 +104,8 @@ wait_for_apt_lock
 sudo apt-get upgrade -y
 
 wait_for_apt_lock
+echo "================================="
+echo 'Starting apt package installs'
 sudo apt-get install -y \
     docker.io \
     git \
@@ -113,15 +119,19 @@ sudo apt-get install -y \
     python3-pip \
     unzip
 
+# TODO: Sep 2026: We do not need this (golden AMI's)
 ARCH=$(uname -m)
 [ "$ARCH" = "x86_64" ] && URL="x86_64" || URL="aarch64"
 
+echo "================================="
+echo "[$(date)] Installing AWS CLI ..."
 curl -s "https://awscli.amazonaws.com/awscli-exe-linux-$URL.zip" -o "awscliv2.zip"
 unzip -q awscliv2.zip
 sudo ./aws/install --update
 aws --version
 
 # Install Python dependencies for catalog loading scripts
+echo "================================="
 echo "[$(date)] Installing Python dependencies..."
 pip3 install --no-cache-dir --break-system-packages psycopg2-binary
 
@@ -130,6 +140,7 @@ echo "[$(date)] System packages installed"
 ################################################################################
 # Docker Installation and Configuration
 ################################################################################
+echo "================================="
 echo "[$(date)] Configuring Docker..."
 
 # Conditional for local Docker - can remove for user-data
@@ -137,7 +148,6 @@ if command -v systemctl >/dev/null 2>&1; then
   systemctl enable docker
   systemctl start docker
 fi
-
 
 # Add ubuntu user to docker group
 if id "ubuntu" &>/dev/null; then
@@ -155,6 +165,7 @@ docker --version
 # Docker Compose Installation
 ################################################################################
 if ! command -v docker-compose &> /dev/null; then
+    echo "================================="
     echo "[$(date)] Installing Docker Compose..."
 
     sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
@@ -169,13 +180,14 @@ docker-compose --version
 ################################################################################
 # Directory Structure
 ################################################################################
+echo "================================="
 echo "[$(date)] Creating directory structure..."
 
 sudo mkdir -p $INSTALL_DIR/deployment
 sudo mkdir -p $INSTALL_DIR/scripts
-sudo mkdir -p $LOG_DIR
 sudo mkdir -p $BACKUP_DIR
 sudo mkdir -p /opt/stac/logs
+sudo mkdir -p /stac-catalog
 
 if [ "$RUNTIME_USER" != "root" ]; then
     # Change ownership of directories (ignore errors for read-only mounts like test environments)
@@ -188,6 +200,7 @@ fi
 # Generate Secure Password
 ################################################################################
 if [ -z "$POSTGRES_PASSWORD" ]; then
+    echo "================================="
     echo "[$(date)] Generating secure database password..."
     POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
     echo "$POSTGRES_PASSWORD" | sudo tee $INSTALL_DIR/.db_password > /dev/null
@@ -198,6 +211,7 @@ fi
 ################################################################################
 # Create .env File
 ################################################################################
+echo "================================="
 echo "[$(date)] Creating environment configuration..."
 
 PRIMARY_S3_BUCKET=$(echo "${s3_read_paths}" | cut -d',' -f1 | cut -d'/' -f1)
@@ -225,9 +239,9 @@ BROWSER_PORT=8080
 S3_BUCKET=$PRIMARY_S3_BUCKET
 S3_CATALOG_PATH="${stac_catalog_path}"
 # Docker Image Versions
-PGSTAC_VERSION="v0.8.6"
-STAC_API_VERSION="latest"
-STAC_BROWSER_VERSION="latest"
+PGSTAC_VERSION=$PGSTAC_VERSION
+STAC_FASTAPI_VERSION=$STAC_FASTAPI_VERSION
+STAC_BROWSER_VERSION=$STAC_BROWSER_VERSION
 SB_maxPreviewsOnMap=-1
 
 # AWS Configuration
@@ -255,6 +269,7 @@ EOF
 ################################################################################
 # Create Asset Proxy Service Files
 ################################################################################
+echo "================================="
 echo "[$(date)] Creating asset proxy service..."
 
 mkdir -p $INSTALL_DIR/deployment/asset-proxy
@@ -438,17 +453,40 @@ def proxy_s3_asset(bucket: str, path: str, request: Request):
 
 if __name__ == "__main__":
     uvicorn.run(
-        app,
+        "app:app",
         host="0.0.0.0",
         port=int(os.environ.get('PORT', '8083')),
         log_level=os.environ.get('LOG_LEVEL', 'info').lower()
     )
 PROXY_APP_EOF
 
+########
+# NOTICE...  !!!!!!!
+########
+# NOTE: Sep 2026: The version are hardcoded in this requirements file for now.
+# had trouble getting it to take varibles. To be fixed.
 cat > $INSTALL_DIR/deployment/asset-proxy/requirements.txt <<'PROXY_REQ_EOF'
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-boto3==1.34.0
+
+# Core STAC FastAPI backend
+#   As of 6.4.0 stac-fastapi-pgstac comes with a slim version, so we need some extra dependencies
+stac-fastapi-pgstac==6.4.0
+
+# Library ecosystem dependencies (pinned to matching 6.4.0 framework release)
+stac-fastapi-api==6.4.0
+stac-fastapi-types==6.4.0
+stac-fastapi-extensions==6.4.0
+
+# Base framework requirement
+fastapi-slim>=0.73
+
+# Database communication utility layer
+pypgstac>=0.8.0
+
+# Production ASGI server 
+uvicorn[standard]>=0.20.0
+
+# Misc other packages
+boto3==1.43.95
 PROXY_REQ_EOF
 
 cat > $INSTALL_DIR/deployment/asset-proxy/Dockerfile <<'PROXY_DOCKER_EOF'
@@ -479,6 +517,7 @@ if [ "$RUNTIME_USER" != "root" ]; then
     sudo chown -R $RUNTIME_USER:$RUNTIME_USER $INSTALL_DIR/deployment/asset-proxy 2>/dev/null || true
 fi
 
+echo "================================="
 echo "[$(date)] Asset proxy service files created"
 
 ################################################################################
@@ -488,12 +527,13 @@ echo "[$(date)] Creating docker-compose configuration..."
 echo "[$(date)] BOOTSTRAP_TEST_MODE=$${BOOTSTRAP_TEST_MODE:-false}"
 
 cat > $INSTALL_DIR/deployment/docker-compose.yml <<'COMPOSE_EOF'
-version: '3.8'
 
 services:
   database:
     container_name: hec-ras-stac-db
-    image: ghcr.io/stac-utils/pgstac:$${PGSTAC_VERSION}
+
+    ## NOTICE: The actual iamge url had a 'v' in it
+    image: ghcr.io/stac-utils/pgstac:v$${PGSTAC_VERSION}
     environment:
       - POSTGRES_USER=$${POSTGRES_USER}
       - POSTGRES_PASSWORD=$${POSTGRES_PASSWORD}
@@ -530,7 +570,7 @@ services:
 
   stac-api:
     container_name: hec-ras-stac-api
-    image: ghcr.io/stac-utils/stac-fastapi-pgstac:$${STAC_API_VERSION}
+    image: ghcr.io/stac-utils/stac-fastapi-pgstac:$${STAC_FASTAPI_VERSION}
     environment:
       - POSTGRES_USER=$${POSTGRES_USER}
       - POSTGRES_PASS=$${POSTGRES_PASSWORD}
@@ -553,13 +593,16 @@ services:
       - S3_CATALOG_PATH=$${S3_CATALOG_PATH}
       - STAC_FASTAPI_TITLE=HEC-RAS STAC
       - STAC_FASTAPI_DESCRIPTION=HEC-RAS flood inundation model catalog
+      - STAC_FASTAPI_LANDING_ID=hec-ras-api-catalog
+      - STAC_FASTAPI_VERSION=$${STAC_FASTAPI_VERSION}      
     ports:
       - "8082:8082"
     depends_on:
       database:
         condition: service_healthy
     restart: unless-stopped
-    command: ["uvicorn", "stac_fastapi.pgstac.app:app", "--host", "0.0.0.0", "--port", "8082"]
+    # command: ["uvicorn", "stac_fastapi.pgstac.app:app", "--host", "0.0.0.0", "--port", "8082"]
+    command: ["uvicorn", "stac_fastapi.pgstac.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8082"]
 
   stac-browser:
     container_name: hec-ras-stac-browser
@@ -579,6 +622,8 @@ services:
       context: ./asset-proxy
       dockerfile: Dockerfile
     network_mode: host
+    ports:
+      - "8083:8000"    
     environment:
       - AWS_REGION=$${AWS_REGION}
       - PRESIGNED_URL_EXPIRATION=3600
@@ -589,6 +634,7 @@ COMPOSE_EOF
 
 # Modify docker-compose.yml for test mode (Docker-in-Docker)
 if [ "$${BOOTSTRAP_TEST_MODE:-false}" = "true" ]; then
+    echo "================================="
     echo "[$(date)] Test mode detected - converting to named volumes for Docker-in-Docker compatibility"
     # Replace bind mount with named volume
     sed -i 's|./pgdata:/var/lib/postgresql/data|pgstac-data:/var/lib/postgresql/data|g' $INSTALL_DIR/deployment/docker-compose.yml
@@ -606,12 +652,14 @@ volumes:
     driver: local
 TEST_CONFIG_EOF
 else
+    echo "================================="
     echo "[$(date)] Production mode - using bind mount at ./pgdata"
 fi
 
 ################################################################################
 # Create Health Check Script
 ################################################################################
+echo "================================="
 echo "[$(date)] Creating health check script..."
 
 cat > $INSTALL_DIR/deployment/health-check.sh <<'HEALTH_EOF'
@@ -632,18 +680,23 @@ API_RESPONSE=$(curl -s http://localhost:8082/ 2>/dev/null)
 if [ $? -eq 0 ]; then
     echo "$API_RESPONSE" | jq -r '.title // "API Running (no title)"' 2>/dev/null || echo "API: Running"
 else
-    echo "API: NOT RESPONDING"
+    echo "  *****  API: NOT RESPONDING  *****"
 fi
 echo ""
 
 # Check Browser endpoint
 echo "--- STAC Browser Health ---"
-curl -s -o /dev/null -w "HTTP %%{http_code}\n" http://localhost:8080 2>/dev/null || echo "Browser: NOT RESPONDING"
+curl -s -o /dev/null -w "HTTP %%{http_code}\n" http://localhost:8080 2>/dev/null || echo "    *****  Browser: NOT RESPONDING  *****"
 echo ""
+
+# Check Proxy health
+# echo "--- Proxy Health ---"
+# TODO: Is there a way to get the proxy service? 
+# ... test_asset_proxy.sh
 
 # Check database
 echo "--- Database Health ---"
-docker exec hec-ras-stac-db pg_isready -U pgstac -d stacdb 2>/dev/null || echo "Database: NOT READY"
+docker exec hec-ras-stac-db pg_isready -U pgstac -d stacdb 2>/dev/null || echo "   *****  Database: NOT READY  *****"
 echo ""
 
 # Check disk usage
@@ -685,6 +738,7 @@ chmod +x $INSTALL_DIR/deployment/health-check.sh
 ################################################################################
 # Create Backup Script
 ################################################################################
+echo "================================="
 echo "[$(date)] Creating backup script..."
 
 cat > $INSTALL_DIR/deployment/backup-db.sh <<'BACKUP_EOF'
@@ -728,6 +782,7 @@ chmod +x $INSTALL_DIR/deployment/backup-db.sh
 ################################################################################
 # Create Service Management Scripts
 ################################################################################
+echo "================================="
 echo "[$(date)] Creating service management scripts..."
 
 cat > $INSTALL_DIR/deployment/restart-services.sh <<'RESTART_EOF'
@@ -762,21 +817,25 @@ chmod +x $INSTALL_DIR/deployment/*.sh
 ################################################################################
 # Pull Docker Images
 ################################################################################
+echo "================================="
 echo "[$(date)] Pulling Docker images (this may take several minutes)..."
 
-docker pull ghcr.io/stac-utils/pgstac:$PGSTAC_VERSION
-docker pull ghcr.io/stac-utils/stac-fastapi-pgstac:$STAC_API_VERSION
+# NOTICE: The pgstac has a 'v' in the address
+docker pull ghcr.io/stac-utils/pgstac:v$PGSTAC_VERSION
+echo "[$(date)] pgstac image download complete"
+docker pull ghcr.io/stac-utils/stac-fastapi-pgstac:$STAC_FASTAPI_VERSION
+echo "[$(date)] stac browser image download complete"
 docker pull ghcr.io/radiantearth/stac-browser:$STAC_BROWSER_VERSION
-
 echo "[$(date)] Docker images pulled successfully"
 
 ################################################################################
 # Start Services
 ################################################################################
+echo "================================="
 echo "[$(date)] Starting HEC-RAS STAC services..."
 
 # Ensure log directories exist and are writable (For Testing (Docker-in-Docker))
-sudo mkdir -p /opt/stac/logs
+# sudo mkdir -p /opt/stac/logs # already existed, updated lower in perms block reset
 sudo chmod -R 777 /opt/stac/logs
 
 cd $INSTALL_DIR/deployment
@@ -799,6 +858,7 @@ docker exec -i hec-ras-stac-db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "\dx" 2
 ################################################################################
 # Only configure systemd if it's available (not in Docker containers)
 if command -v systemctl >/dev/null 2>&1; then
+    echo "================================="
     echo "[$(date)] Creating systemd service for auto-start..."
 
     sudo cat > /etc/systemd/system/hec-ras-stac.service <<'SYSTEMD_EOF'
@@ -831,17 +891,18 @@ fi
 # Configure Automated Backups
 ################################################################################
 # Only configure cron if it's available (not in Docker containers)
+echo "================================="
 if command -v crontab >/dev/null 2>&1; then
     echo "[$(date)] Configuring automated backups..."
 
-    # Add weekly backup to crontab (Sunday 2 AM)
+    # Add weekly backup to crontab (Sat 11pm)
     if [ "$RUNTIME_USER" != "root" ]; then
-        sudo -u $RUNTIME_USER bash -c "(crontab -l 2>/dev/null; echo '0 2 * * 0 $INSTALL_DIR/deployment/backup-db.sh >> $LOG_DIR/backup.log 2>&1') | crontab -"
+        sudo bash -c "(crontab -l 2>/dev/null; echo '0 23 * * 6 $INSTALL_DIR/deployment/backup-db.sh >> $LOG_DIR/backup.log 2>&1') | crontab -"
     else
-        (crontab -l 2>/dev/null; echo "0 2 * * 0 $INSTALL_DIR/deployment/backup-db.sh >> $LOG_DIR/backup.log 2>&1") | crontab -
+        (crontab -l 2>/dev/null; echo "0 23 * * 6 $INSTALL_DIR/deployment/backup-db.sh >> $LOG_DIR/backup.log 2>&1") | crontab -
     fi
 
-    echo "[$(date)] Automated weekly backups configured (Sunday 2 AM)"
+    echo "[$(date)] Automated weekly backups configured (Sat 11 PM)"
 else
     echo "[$(date)] Cron not available (skipping automated backup configuration)"
 fi
@@ -850,6 +911,7 @@ fi
 # Configure Firewall (if applicable)
 ################################################################################
 if command -v firewall-cmd &> /dev/null; then
+    echo "================================="
     echo "[$(date)] Configuring firewall..."
     sudo firewall-cmd --permanent --add-port=8082/tcp
     sudo firewall-cmd --permanent --add-port=8080/tcp
@@ -919,7 +981,7 @@ Common SQL Queries:
 
 Automated Backups:
 ------------------
-Schedule:  Weekly (Sunday 2 AM)
+Schedule:  Weekly (Sat 11 PM)
 Location:  $${BACKUP_S3_URI:-"None configured (local backups only)"}
 Local:     /opt/backups/postgres/ (last 7 days)
 
@@ -968,8 +1030,9 @@ Terraform Deployment Configuration:
   S3 Read Access:   ${s3_read_paths}
   S3 Write Access:  ${s3_write_paths}
   S3 Backup URI:    $${BACKUP_S3_URI:-"None configured (Local backups only)"}
-  API Version:      ${api_image_version}
-  Browser Version:  ${browser_image_version}
+  PGSTAC Version:        $PGSTAC_VERSION
+  STAC FASTAPI Version:  $STAC_FASTAPI_VERSION
+  STAC Browser Version:  $STAC_BROWSER_VERSION
 
 Services (verify with health-check.sh):
   STAC API:     http://$DOMAIN_NAME:8082
@@ -996,7 +1059,7 @@ Documentation: $INSTALL_DIR/README.txt
 
 Automated Features:
   - Services auto-start on boot via systemd
-  - Weekly database backups (Sunday 2 AM)
+  - Weekly database backups (Sat 11PM (if enabled))
   - 7-day local backup retention
   - Auto-sync to S3 Backup URI (if configured via Terraform)
 

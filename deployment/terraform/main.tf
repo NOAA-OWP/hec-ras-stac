@@ -1,15 +1,33 @@
+
+# Sep 2026
+# We should create an seperate script or process to create a new deploy role and have that user/role
+# run this script. You would have to run two scripts, one for creating the user/role, then this one.
+
 locals {
-  common_tags = {
+  # region = "us-east-1"
+  common_tags = merge(var.common_resource_tags, {
     Application = var.api_name
     Environment = var.environment
-    ManagedBy   = "terraform"
-  }
-  is_standalone    = !var.enterprise_mode
-  full_domain_name = "${var.api_name}.${trimsuffix(data.aws_route53_zone.selected.name, ".")}"
+    CreatedBy   = "terraform-benchmark-stac"
+  })
+  is_standalone = !var.enterprise_mode
+  
+  # TODO: How will this look to the setup of route 53?
+  # run tf validate or init to see what we get
+  # Rob H: Change this to be api but add a tag route53 subdomain name  (ie. stac-serfvice.. or something)
+  # full_domain_name = "${var.api_name}.${trimsuffix(data.aws_route53_zone.selected.name, ".")}"
+  full_domain_name = "${var.api_name}.${data.aws_route53_zone.selected.name}"
+
+  ec2_name = var.ec2_instance_name_override != null ? var.ec2_instance_name_override : "${var.api_name}-${var.environment}"
+
+  # formatted_date = formatdate("YYYY-MM-DD", timestamp())
 }
 
 # Security Groups
+# TODO: for some resources, there is often two or more.  How do we fix this?
+# We migth need to rethink this as TF docs now say that we should not have ingress and egress in one instance ???
 resource "aws_security_group" "instance" {
+  count = local.is_standalone ? 0 : 1
   name_prefix = "${var.api_name}-${var.environment}-instance"
   description = "Security group for API instances"
   vpc_id      = data.aws_vpc.main.id
@@ -17,13 +35,13 @@ resource "aws_security_group" "instance" {
   dynamic "ingress" {
     for_each = var.app_ports
     content {
-      from_port = ingress.value
-      to_port   = ingress.value
-      protocol  = "tcp"
-      # Allows traffic from the ALB SG only if Enterprise Mode is enabled
-      security_groups = var.enterprise_mode ? aws_security_group.alb[*].id : null
-      # Always allow internal VPC traffic for internal communication
-      cidr_blocks = concat([data.aws_vpc.main.cidr_block], var.additional_vpc_cidrs)
+        from_port       = ingress.value
+        to_port         = ingress.value
+        protocol        = "tcp"
+        # Allows traffic from the ALB SG only if Enterprise Mode is enabled
+        security_groups = var.enterprise_mode ? aws_security_group.alb[*].id : null
+        # Always allow internal VPC traffic for internal communication
+        cidr_blocks     = concat([data.aws_vpc.main.cidr_block], var.additional_vpc_cidrs)
     }
   }
 
@@ -51,8 +69,8 @@ resource "aws_security_group" "instance" {
   }
 }
 
-
 # The ALB security group should now only allow internal access
+# Sep 1, 2026: We do not want our own security groups in Ti/Dev, we will use the two normal defaults
 resource "aws_security_group" "alb" {
   count = local.is_standalone ? 0 : 1
 
@@ -61,17 +79,17 @@ resource "aws_security_group" "alb" {
   vpc_id      = data.aws_vpc.main.id
 
   ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = concat([data.aws_vpc.main.cidr_block], var.additional_vpc_cidrs)
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = concat([data.aws_vpc.main.cidr_block], var.additional_vpc_cidrs)
   }
 
   ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = concat([data.aws_vpc.main.cidr_block], var.additional_vpc_cidrs)
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = concat([data.aws_vpc.main.cidr_block], var.additional_vpc_cidrs)
   }
 
   egress {
@@ -91,7 +109,10 @@ resource "aws_security_group" "alb" {
 }
 
 # IAM Resources
+# Sep 1, 2026: Hold. We do not want a custom IAM role as the EC2 already has an IAM role and grants
+# access to everything in TI.
 resource "aws_iam_role" "instance_role" {
+  count = local.is_standalone ? 0 : 1
   name = "${var.api_name}-${var.environment}-instance-role"
 
   assume_role_policy = jsonencode({
@@ -114,9 +135,13 @@ resource "aws_iam_role" "instance_role" {
   tags = local.common_tags
 }
 
+# Sep 1, 2026: Hold. We do not want a custom IAM role as the EC2 already has an IAM role and grants
+# access to everything in TI.
 resource "aws_iam_role_policy" "instance_policy" {
+  count = local.is_standalone ? 0 : 1
   name_prefix = "instance-policy"
-  role        = aws_iam_role.instance_role.id
+  # role        = aws_iam_role.instance_role.id
+  role          = aws_iam_role.instance_role[0].id  # humm.. would there not always be just one?
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -133,7 +158,7 @@ resource "aws_iam_role_policy" "instance_policy" {
           var.ad_secret
         ])
       }] : [],
-
+      
       [{
         Effect = "Allow"
         Action = [
@@ -146,7 +171,7 @@ resource "aws_iam_role_policy" "instance_policy" {
           aws_cloudwatch_log_group.api_logs.arn
         ]
       }],
-
+      
       # Conditionally include S3 List access (if any paths exist)
       length(concat(var.s3_read_paths, var.s3_write_paths)) > 0 ? [{
         Effect = "Allow"
@@ -155,11 +180,11 @@ resource "aws_iam_role_policy" "instance_policy" {
           "s3:GetBucketLocation"
         ]
         Resource = distinct(flatten([
-          for path in concat(var.s3_read_paths, var.s3_write_paths) :
+          for path in concat(var.s3_read_paths, var.s3_write_paths) : 
           "arn:aws:s3:::${split("/", path)[0]}"
         ]))
       }] : [],
-
+      
       # Conditionally include S3 Read access
       length(var.s3_read_paths) > 0 ? [{
         Effect = "Allow"
@@ -168,11 +193,11 @@ resource "aws_iam_role_policy" "instance_policy" {
           "s3:GetObjectAcl"
         ]
         Resource = [
-          for path in var.s3_read_paths :
+          for path in var.s3_read_paths : 
           can(regex("/\\*$", path)) ? "arn:aws:s3:::${path}" : "arn:aws:s3:::${path}/*"
         ]
       }] : [],
-
+      
       # Conditionally include S3 Write access
       length(var.s3_write_paths) > 0 ? [{
         Effect = "Allow"
@@ -185,7 +210,7 @@ resource "aws_iam_role_policy" "instance_policy" {
           "s3:ListMultipartUploadParts"
         ]
         Resource = [
-          for path in var.s3_write_paths :
+          for path in var.s3_write_paths : 
           can(regex("/\\*$", path)) ? "arn:aws:s3:::${path}" : "arn:aws:s3:::${path}/*"
         ]
       }] : []
@@ -193,14 +218,26 @@ resource "aws_iam_role_policy" "instance_policy" {
   })
 }
 
+# Sep 1, 2026: Hold. We do not want a custom IAM role as the EC2 already has an IAM role and grants
+# access to everything in TI.
+# TODO: How do we use the override but only if it does not exist
 resource "aws_iam_instance_profile" "instance_profile" {
+  count = local.is_standalone ? 0 : 1
   name = "${var.api_name}-${var.environment}-instance-profile"
-  role = aws_iam_role.instance_role.name
+  
+  # name = "${var.ec2_instance_name_override}"
+
+  # role = aws_iam_role.instance_role.name
+  role = aws_iam_role.instance_role[0].name  # Hummm.. would there not only be one?
   tags = local.common_tags
 }
 
+# Sep 1, 2026: Hold. We do not want a custom IAM role as the EC2 already has an IAM role and grants
+# access to everything in TI.
 resource "aws_iam_role_policy_attachment" "session_manager_logging" {
-  role       = aws_iam_role.instance_role.id
+  count = local.is_standalone ? 0 : 1  
+  # role       = aws_iam_role.instance_role.id
+  role       = aws_iam_role.instance_role[0].id   # Hummm.. would there not only be one?
   policy_arn = var.session_manager_logging_policy_arn
 }
 
@@ -208,14 +245,17 @@ resource "aws_iam_role_policy_attachment" "session_manager_logging" {
 resource "aws_instance" "standalone_instance" {
   count = local.is_standalone ? 1 : 0
 
-  ami           = coalesce(var.ami_id, data.aws_ami.ubuntu.id)
+  # ami           = coalesce(var.ami_id, data.aws_ami.ubuntu.id)
+  ami           = var.ami_id
   instance_type = var.instance_type
-  key_name      = var.key_name
-
+  key_name      = var.key_name   # This is the instance key_pair
+  
   root_block_device {
     volume_type = var.root_volume_type
     volume_size = var.root_volume_size
     encrypted   = true
+    kms_key_id  = var.kms_key_arn
+    delete_on_termination = true    
   }
 
   metadata_options {
@@ -224,44 +264,56 @@ resource "aws_instance" "standalone_instance" {
     http_put_response_hop_limit = 1
   }
 
-  iam_instance_profile        = aws_iam_instance_profile.instance_profile.name
-  vpc_security_group_ids      = [aws_security_group.instance.id]
-  subnet_id                   = data.aws_subnets.private.ids[0]
+  # Must use OWPs golden images, so building an image from scratch is not an option
+  # Kept one instance profile name for EC2's as it is possible that IAM can be
+  # used on other objects and might not be the same IAM we want (likely not)
+  # iam_instance_profile        = aws_iam_instance_profile.instance_profile.name
+  iam_instance_profile        = var.ec2_iam_instance_profile_name
+  # vpc_security_group_ids      = [aws_security_group.instance.id]
+  vpc_security_group_ids      = var.security_group_ids
+
+  # subnet_id:  Fix this... It will take only the first one and not all if more than one.
+  subnet_id                   = var.subnet_id
   associate_public_ip_address = false
 
   user_data_replace_on_change = true
   user_data_base64 = base64gzip(
     templatefile(
-      var.enterprise_mode ? "${path.module}/templates/user_data_enterprise.sh.tpl" : "${path.module}/templates/user_data_standalone.sh.tpl",
+      var.enterprise_mode 
+      ? "${path.module}/templates/user_data_enterprise.sh.tpl"
+      : "${path.module}/templates/user_data_standalone.sh.tpl", 
       {
         aws_region            = var.aws_region
         db_host               = var.db_host
         db_port               = var.db_port
         db_name               = var.db_name
-        secrets_manager_arn   = var.secrets_manager_arn
-        directory_id          = var.directory_id
-        directory_name        = var.directory_name
-        ad_secret             = var.ad_secret
-        ad_dns_1              = var.enterprise_mode && length(var.ad_dns_servers) > 0 ? var.ad_dns_servers[0] : ""
-        ad_dns_2              = var.enterprise_mode && length(var.ad_dns_servers) > 1 ? var.ad_dns_servers[1] : ""
-        log_group_name        = aws_cloudwatch_log_group.api_logs.name
+        # secrets_manager_arn   = var.secrets_manager_arn
+        # directory_id          = var.directory_id
+        # directory_name        = var.directory_name
+        # ad_secret             = var.ad_secret
+        # ad_dns_1              = var.enterprise_mode && length(var.ad_dns_servers) > 0 ? var.ad_dns_servers[0] : ""
+        # ad_dns_2              = var.enterprise_mode && length(var.ad_dns_servers) > 1 ? var.ad_dns_servers[1] : ""
+        # log_group_name        = aws_cloudwatch_log_group.api_logs.name
         environment           = var.environment
-        enterprise_mode       = var.enterprise_mode
-        alb_target_port       = var.alb_target_port
+        # enterprise_mode       = var.enterprise_mode
+        # alb_target_port       = var.alb_target_port
         s3_read_paths         = join(",", var.s3_read_paths)
         s3_write_paths        = join(",", var.s3_write_paths)
         backup_s3_uri         = var.backup_s3_uri
-        stac_catalog_path     = var.stac_catalog_path
-        api_image_version     = var.api_image_version
-        browser_image_version = var.browser_image_version
+        stac_catalog_path             = var.stac_catalog_path
+        pgstac_version                = var.pgstac_version
+        stac_fastapi_image_version    = var.stac_fastapi_image_version
+        stac_browser_image_version    = var.stac_browser_image_version
         domain_name           = local.full_domain_name
+        postgres_password     = var.postgres_password
       }
     )
   )
 
-  tags = merge(local.common_tags, {
-    Name = "${var.api_name}-${var.environment}"
-  })
+  tags = merge(local.common_tags,
+                var.ec2_resource_tags,  {
+                Name = local.ec2_name
+                })
 
   lifecycle {
     create_before_destroy = true
@@ -272,14 +324,16 @@ resource "aws_instance" "standalone_instance" {
 resource "aws_launch_template" "app" {
   count = local.is_standalone ? 0 : 1
 
-  name_prefix            = "${var.api_name}-${var.environment}"
-  image_id               = coalesce(var.ami_id, data.aws_ami.ubuntu.id)
-  instance_type          = var.instance_type
-  update_default_version = true
+  name_prefix             = "${var.api_name}-${var.environment}"
+  # TODO: This has to be redone as we will likely have to use a pre-approved golden AMI
+  # image_id                = coalesce(var.ami_id, data.aws_ami.ubuntu.id)  
+  instance_type           = var.instance_type
+  update_default_version  = true
 
   network_interfaces {
     associate_public_ip_address = false
-    security_groups             = [aws_security_group.instance.id]
+    # security_groups             = [aws_security_group.instance.id]
+    security_groups             = [aws_security_group.instance[count.index].id]  # This needs to be fixed
     delete_on_termination       = true
   }
 
@@ -301,12 +355,12 @@ resource "aws_launch_template" "app" {
   }
 
   iam_instance_profile {
-    name = aws_iam_instance_profile.instance_profile.name
-  }
+    name = aws_iam_instance_profile.instance_profile[0].name 
+  }  # hummm... should only be one
 
   user_data = base64gzip(
     templatefile(
-      var.enterprise_mode ? "${path.module}/templates/user_data_enterprise.sh.tpl" : "${path.module}/templates/user_data_standalone.sh.tpl",
+      var.enterprise_mode ? "${path.module}/templates/user_data_enterprise.sh.tpl" : "${path.module}/templates/user_data_standalone.sh.tpl", 
       {
         aws_region            = var.aws_region
         db_host               = var.db_host
@@ -324,10 +378,12 @@ resource "aws_launch_template" "app" {
         alb_target_port       = var.alb_target_port
         s3_read_paths         = join(",", var.s3_read_paths)
         s3_write_paths        = join(",", var.s3_write_paths)
-        stac_catalog_path     = var.stac_catalog_path
-        api_image_version     = var.api_image_version
-        browser_image_version = var.browser_image_version
+        stac_catalog_path            = var.stac_catalog_path
+        pgstac_version               = var.pgstac_version
+        stac_fastapi_image_version   = var.stac_fastapi_image_version
+        stac_browser_image_version   = var.stac_browser_image_version
         domain_name           = local.full_domain_name
+        postgres_password     = var.postgres_password
       }
     )
   )
@@ -336,16 +392,18 @@ resource "aws_launch_template" "app" {
     enabled = true
   }
 
+
   tag_specifications {
     resource_type = "instance"
-    tags = merge(local.common_tags, {
-      Name = "${var.api_name}-${var.environment}"
-    })
+    tags = concat(local.common_tags,
+                var.ec2_resource_tags,  {
+                Name = "${local.ec2_name}"
+                })
   }
 
   tag_specifications {
     resource_type = "volume"
-    tags          = local.common_tags
+    tags = local.common_tags
   }
 
   lifecycle {
@@ -356,14 +414,14 @@ resource "aws_launch_template" "app" {
 resource "aws_autoscaling_group" "app" {
   count = local.is_standalone ? 0 : 1
 
-  name                      = "${var.api_name}-${var.environment}"
-  desired_capacity          = var.asg_desired_capacity
-  max_size                  = var.asg_max_size
-  min_size                  = var.asg_min_size
-  target_group_arns         = [aws_lb_target_group.app[0].arn]
-  vpc_zone_identifier       = data.aws_subnets.private.ids
-  health_check_grace_period = 900
-  health_check_type         = "ELB"
+  name                = "${var.api_name}-${var.environment}"
+  desired_capacity    = var.asg_desired_capacity
+  max_size            = var.asg_max_size
+  min_size            = var.asg_min_size
+  target_group_arns   = [aws_lb_target_group.app[0].arn]
+  vpc_zone_identifier = data.aws_subnets.private.ids
+  health_check_grace_period = 900 
+  health_check_type   = "ELB"
 
   launch_template {
     id      = aws_launch_template.app[0].id
@@ -373,10 +431,10 @@ resource "aws_autoscaling_group" "app" {
   instance_refresh {
     strategy = "Rolling"
     preferences {
-      min_healthy_percentage = 100
-      instance_warmup        = 900
-      checkpoint_delay       = 900
-      checkpoint_percentages = [25, 50, 75, 100]
+      min_healthy_percentage  = 100
+      instance_warmup         = 900
+      checkpoint_delay        = 900
+      checkpoint_percentages  = [25, 50, 75, 100] 
     }
   }
 
@@ -393,7 +451,7 @@ resource "aws_autoscaling_group" "app" {
 
   lifecycle {
     create_before_destroy = true
-    ignore_changes        = [desired_capacity]
+    ignore_changes       = [desired_capacity]
   }
 
   depends_on = [aws_lb.app]
@@ -403,12 +461,12 @@ resource "aws_autoscaling_group" "app" {
 resource "aws_lb" "app" {
   count = local.is_standalone ? 0 : 1
 
-  name                       = "${var.api_name}-${var.environment}"
-  internal                   = true
-  load_balancer_type         = "application"
-  security_groups            = [aws_security_group.alb[0].id]
-  subnets                    = data.aws_subnets.private.ids
-  idle_timeout               = 600
+  name               = "${var.api_name}-${var.environment}"
+  internal           = true  
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb[0].id]
+  subnets            = data.aws_subnets.private.ids  
+  idle_timeout       = 600 
   enable_deletion_protection = var.enable_deletion_protection
 
   access_logs {
@@ -426,7 +484,7 @@ resource "aws_lb_target_group" "app" {
   count = local.is_standalone ? 0 : 1
 
   name     = "${var.api_name}-${var.environment}"
-  port     = var.alb_target_port
+  port     = var.alb_target_port 
   protocol = "HTTP"
   vpc_id   = data.aws_vpc.main.id
 
@@ -434,7 +492,7 @@ resource "aws_lb_target_group" "app" {
     enabled             = true
     healthy_threshold   = 3
     interval            = 30
-    matcher             = "200"
+    matcher             = "200"  
     path                = var.health_check_path
     port                = "traffic-port"
     timeout             = 10
@@ -509,7 +567,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = var.kms_key_arn == null ? "AES256" : "aws:kms"
-      kms_master_key_id = var.kms_key_arn
+      kms_master_key_id = var.kms_key_arn  
     }
   }
 }
@@ -521,7 +579,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
   rule {
     id     = "cleanup_old_logs"
     status = "Enabled"
-
+    
     filter {
       prefix = ""
     }
@@ -560,7 +618,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
         ]
         Condition = {
           StringEquals = {
-            "s3:x-amz-acl" : "bucket-owner-full-control"
+            "s3:x-amz-acl": "bucket-owner-full-control"
           }
         }
       },
@@ -569,20 +627,20 @@ resource "aws_s3_bucket_policy" "alb_logs" {
         Principal = {
           Service = "delivery.logs.amazonaws.com"
         }
-        Action   = "s3:GetBucketAcl"
+        Action = "s3:GetBucketAcl"
         Resource = aws_s3_bucket.alb_logs[0].arn
       },
       {
-        Effect    = "Deny"
+        Effect = "Deny"
         Principal = "*"
-        Action    = "s3:*"
+        Action = "s3:*"
         Resource = [
           aws_s3_bucket.alb_logs[0].arn,
           "${aws_s3_bucket.alb_logs[0].arn}/*"
         ]
         Condition = {
           Bool = {
-            "aws:SecureTransport" : "false"
+            "aws:SecureTransport": "false"
           }
         }
       }
@@ -703,13 +761,13 @@ resource "aws_cloudwatch_metric_alarm" "high_5xx_errors" {
 }
 
 resource "null_resource" "asg_refresh" {
-  count      = local.is_standalone ? 0 : 1
+  count = local.is_standalone ? 0 : 1
   depends_on = [aws_autoscaling_group.app]
 
   triggers = {
     # Trigger ASG instance refresh when user_data content changes
     user_data_hash = base64sha256(templatefile(
-      var.enterprise_mode ? "${path.module}/templates/user_data_enterprise.sh.tpl" : "${path.module}/templates/user_data_standalone.sh.tpl",
+      var.enterprise_mode ? "${path.module}/templates/user_data_enterprise.sh.tpl" : "${path.module}/templates/user_data_standalone.sh.tpl", 
       {
         aws_region            = var.aws_region
         db_host               = var.db_host
@@ -727,9 +785,10 @@ resource "null_resource" "asg_refresh" {
         alb_target_port       = var.alb_target_port
         s3_read_paths         = join(",", var.s3_read_paths)
         s3_write_paths        = join(",", var.s3_write_paths)
-        stac_catalog_path     = var.stac_catalog_path
-        api_image_version     = var.api_image_version
-        browser_image_version = var.browser_image_version
+        stac_catalog_path           = var.stac_catalog_path
+        pgstac_version              = var.pgstac_version
+        stac_fastapi_image_version  = var.stac_fastapi_image_version
+        stac_browser_image_version  = var.stac_browser_image_version
       }
     ))
   }

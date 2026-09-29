@@ -3,13 +3,13 @@
 # ==========================================
 
 output "stac_api_url" {
-  description = "The URL to access the STAC API"
+  description = "The URL to access the HECRAS STAC API"
   # Standalone uses HTTP with custom port; Enterprise uses ALB with HTTPS
   value = local.is_standalone ? "http://${local.full_domain_name}:8082" : "https://${local.full_domain_name}"
 }
 
 output "stac_browser_url" {
-  description = "The URL to access the STAC Browser UI"
+  description = "The URL to access the HECRAS STAC Browser UI"
   # Note: Enterprise routing for the browser UI is pending full implementation.
   value = local.is_standalone ? "http://${local.full_domain_name}:8080" : "https://${local.full_domain_name}/browser (Pending Enterprise Implementation)"
 }
@@ -19,8 +19,13 @@ output "stac_browser_url" {
 # ==========================================
 
 output "standalone_instance_ip" {
-  description = "The private IP of the standalone EC2 instance (if deployed)"
+  description = "The private IP of the standalone HECRAS EC2 instance (if deployed)"
   value       = local.is_standalone ? aws_instance.standalone_instance[0].private_ip : null
+}
+
+output "standalone_instance_id" {
+  description = "The aws EC2 instance ID of the HECRAS EC2 instance"
+  value       = local.is_standalone ? aws_instance.standalone_instance[0].id : null
 }
 
 output "load_balancer_dns" {
@@ -32,7 +37,12 @@ output "load_balancer_dns" {
 # Helpful Commands
 # ==========================================
 
-output "ssh_instructions" {
-  description = "Helpful command for connecting to the standalone instance"
+output "ssh_instructions_non_sso" {
+  description = "Helpful command for connecting to the standalone instance for non SSO"
   value       = local.is_standalone ? "ssh -i /path/to/key.pem ubuntu@${aws_instance.standalone_instance[0].private_ip}" : "Use Session Manager to connect to the ASG instances."
+}
+
+output "ssh_instructions_sso" {
+  description = "Helpful command for connecting to the standalone instance for SSO"
+  value       = "aws ssm start-session --target ${aws_instance.standalone_instance[0].id} --profile (your profile name if necessary)"
 }
